@@ -27,14 +27,41 @@ async function graph(route,token,params={}){
   return result;
 }
 async function graphList(route,token,params={}){let after,items=[];for(let i=0;i<50;i++){const r=await graph(route,token,{...params,limit:'100',...(after?{after}:{})});items.push(...r.data||[]);if(!r.paging?.next)return items;after=r.paging?.cursors?.after;if(!after)fail('Elenco Meta incompleto. Riprova.',422);}fail('Troppe risorse per una singola importazione.',422);}
+async function pagesFromMetaGrant(token,fields,warnings){
+  const appId=process.env.FACEBOOK_APP_ID,appSecret=process.env.FACEBOOK_APP_SECRET;
+  if(!appId||!appSecret)return [];
+  const {data}=await graph('debug_token',appId+'|'+appSecret,{input_token:token});
+  if(!data?.is_valid||String(data.app_id)!==appId)return [];
+
+  const targetIds=scope=>new Set((data.granular_scopes||[])
+    .filter(grant=>grant.scope===scope)
+    .flatMap(grant=>grant.target_ids||[])
+    .map(String)
+    .filter(id=>/^\d+$/.test(id)));
+  const instagramIds=targetIds('instagram_basic');
+  const results=await Promise.allSettled([...targetIds('pages_show_list')].map(id=>graph(id,token,{fields})));
+  if(results.some(result=>result.status==='rejected'))warnings.push('Alcune Pagine selezionate non sono accessibili con questo consenso.');
+  return results.flatMap(result=>{
+    if(result.status==='rejected')return [];
+    const page=result.value;
+    const instagram=page.instagram_business_account;
+    return [{...page,instagram_business_account:instagramIds.has(String(instagram?.id))?instagram:undefined}];
+  });
+}
 async function discoverMeta(source){
   const token=source.refreshToken||source.token,resources=[],warnings=[];
   const identity=await graph('me',token,{fields:'id,name'});
   const granted=await graphList('me/permissions',token);const permissions=new Set(granted.filter(p=>p.status==='granted').map(p=>p.permission));
-  const fields='id,name,about,website,username,access_token,tasks'+(permissions.has('instagram_basic')?',instagram_business_account{id,name,username,biography,website}':'');
+  const pageFields='id,name,about,website,username,access_token'+(permissions.has('instagram_basic')?',instagram_business_account{id,name,username,biography,website}':'');
+  const fields=pageFields+',tasks';
   const pages=new Map();const collect=(list,container)=>{for(const p of list){const old=pages.get(p.id);pages.set(p.id,{...old,...p,access_token:p.access_token||old?.access_token,container:container||old?.container||'Pagine accessibili'});}};
   collect(await graphList('me/accounts',token,{fields}));
   if(permissions.has('business_management')){try{const businesses=await graphList('me/businesses',token,{fields:'id,name'});for(const b of businesses){for(const edge of ['owned_pages','client_pages'])try{collect(await graphList(b.id+'/'+edge,token,{fields}),b.name);}catch{warnings.push('Alcune Pagine del portfolio '+b.name+' non sono accessibili.');}}}catch{warnings.push('Portfolio business non recuperabili; mostriamo le Pagine accessibili direttamente.');}}
+  // Meta may omit individually authorized Pages from /me/accounts.
+  if(!pages.size&&permissions.has('pages_show_list')){
+    try{collect(await pagesFromMetaGrant(token,pageFields,warnings));}
+    catch{warnings.push('Le Pagine selezionate nel consenso Meta non sono verificabili.');}
+  }
   for(const p of pages.values()){
     resources.push({platform:'facebook',externalId:String(p.id),name:p.name,description:p.about||'',website:p.website||'',handle:p.username||'',pageId:String(p.id),container:p.container,canConnect:!!p.access_token&&permissions.has('pages_manage_posts')&&(!p.tasks||p.tasks.includes('CREATE_CONTENT')||p.tasks.includes('MANAGE')),token:p.access_token,refreshToken:token,rootId:identity.id,expiresAt:source.expiresAt});
     const ig=p.instagram_business_account;if(ig)resources.push({platform:'instagram',externalId:String(ig.id),name:ig.name||ig.username,description:ig.biography||'',website:ig.website||'',handle:ig.username||'',pageId:String(p.id),container:p.container,canConnect:permissions.has('instagram_content_publish'),token,refreshToken:token,rootId:identity.id,expiresAt:source.expiresAt});

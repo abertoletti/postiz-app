@@ -1,0 +1,50 @@
+name: brand-hub-source-trial
+
+services:
+  app:
+    image: brand-hub-source-app:trial
+    build:
+      args:
+        POSTIZ_BASE_IMAGE: ${BRAND_HUB_SOURCE_BASE_IMAGE:-brand-hub-postiz-source:trial}
+        POSTIZ_COOKIE_FIX_IN_SOURCE: '1'
+    ports: !reset []
+    environment:
+      MAIN_URL: http://localhost:4008
+      FRONTEND_URL: http://localhost:4008
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:4008/api
+    command:
+      - sh
+      - -c
+      - |
+        unset PORT
+        pnpm exec prisma db push --skip-generate --schema libraries/nestjs-libraries/src/database/prisma/schema.prisma &&
+        nginx &&
+        pm2-runtime start /opt/postiz-railway/ecosystem.config.cjs --only backend,frontend
+
+  gateway:
+    image: node:22.23.4-bookworm-slim
+    ports:
+      - '127.0.0.1:4008:5000'
+    networks:
+      - default
+      - ingress
+    depends_on:
+      - app
+    command:
+      - node
+      - -e
+      - |
+        const net = require('node:net');
+        net.createServer(client => {
+          const upstream = net.connect(5000, 'app');
+          client.once('error', () => upstream.destroy());
+          upstream.once('error', () => client.destroy());
+          client.pipe(upstream).pipe(client);
+        }).listen(5000, '0.0.0.0');
+
+# A cloned workspace can have scheduled posts. Keep the trial disconnected
+# from social platforms and run only the frontend and HTTP API.
+networks:
+  default:
+    internal: true
+  ingress: {}

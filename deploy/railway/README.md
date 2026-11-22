@@ -57,6 +57,79 @@ setup page and calendar-to-hub navigation. Synthetic test data was removed.
 MCP and calendar regression checks passed with zero PM2 restarts. Actual YouTube
 branding writes await a real channel and explicit approval in the application.
 
+## Run Brand Hub locally
+
+With Docker running, build the fork and start the stack from the repository
+root in PowerShell 7.4 or later. Keep the existing `deploy/railway/.env` when
+rebuilding a workspace so its encrypted OAuth credentials can still be read.
+For a new workspace, create that file with a unique `BRAND_HUB_LOCAL_JWT_SECRET`
+and set any OAuth client variables there.
+
+```powershell
+./deploy/railway/build-local-source.ps1
+docker compose --env-file deploy/railway/.env -f deploy/railway/compose.local.yaml up -d --build
+```
+
+Open [Brand Hub](http://localhost:4007/hub/) and register a local account.
+PostgreSQL, Redis, and uploads have dedicated local volumes. Temporal
+stores its state in the local PostgreSQL server. The app is available
+on loopback, with development credentials and an empty workspace on
+first launch. Social connections and publishing require provider
+credentials and callback URLs for the local instance.
+
+For changes in the fork's source, commit the changes locally and rerun both
+commands. The source script builds `brand-hub-postiz-source:local` from a Git
+snapshot via the upstream `Dockerfile.dev`; `-Revision` selects another commit.
+To rebuild only the Brand Hub layer, rerun `up -d --build`. To stop the stack
+and keep its local data, run:
+
+```sh
+docker compose --env-file deploy/railway/.env -f deploy/railway/compose.local.yaml stop
+```
+
+### Test a real YouTube connection on localhost
+
+In a development Google Cloud project, enable the YouTube Data API v3 and the
+YouTube Analytics API. Create an OAuth client of type Web application, add your
+Google account as a test user if the consent screen is in Testing, and allow
+this redirect URI exactly:
+
+```text
+http://localhost:4007/integrations/social/youtube
+```
+
+Set the client credentials in the Git-ignored `deploy/railway/.env` file:
+
+```dotenv
+BRAND_HUB_LOCAL_YOUTUBE_CLIENT_ID=
+BRAND_HUB_LOCAL_YOUTUBE_CLIENT_SECRET=
+```
+
+Apply the credentials using the existing local stack and volumes:
+
+```sh
+docker compose --env-file deploy/railway/.env -f deploy/railway/compose.local.yaml up -d
+```
+
+Sign in to Brand Hub with your local account, then open **Collegamenti → Aggiungi**
+and authorize the Google account that manages the YouTube channel. Refresh the
+inventory and assign the channel to a brand to test the linking flow.
+
+## Preview a build from the fork's source
+
+Build the chosen fork revision and start the separate preview on port 4008:
+
+```powershell
+./deploy/railway/build-local-source.ps1 -Image brand-hub-postiz-source:trial
+docker compose --env-file deploy/railway/.env -f deploy/railway/compose.local.yaml -f deploy/railway/compose.source-trial.yaml up -d --build
+```
+
+The preview uses its own database, Redis and upload volumes. To check existing
+brands or credentials, restore a local database snapshot and upload copy into
+the preview volumes before starting `app`. Use the same local JWT secret so the
+preview can decrypt the copied credentials. The preview blocks outbound traffic
+and runs the frontend and API without the background publishing worker.
+
 ## Rebuild and reactivate on Railway
 
 1. Open the existing `postiz` project and its `production` environment. Confirm

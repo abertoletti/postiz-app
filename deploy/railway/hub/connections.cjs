@@ -3,12 +3,13 @@ const {cleanBrand,fail,text}=require('./domain.cjs');
 const {resourceKey,propose,seal,unseal,discoverMeta,discoverGoogle,publicResource}=require('./discovery.cjs');
 // Page-comment moderation adds a separate Meta dependency (pages_read_user_content).
 // This onboarding needs discovery, publishing and insights, not that extra access.
-const META_SCOPES=['pages_show_list','business_management','pages_manage_posts','pages_read_engagement','read_insights','instagram_basic','instagram_content_publish','instagram_manage_comments','instagram_manage_insights'];
+const META_SCOPES=['pages_show_list','pages_manage_posts','pages_read_engagement','read_insights','instagram_basic','instagram_content_publish','instagram_manage_comments','instagram_manage_insights'];
 const GOOGLE_SCOPES=['https://www.googleapis.com/auth/userinfo.profile','https://www.googleapis.com/auth/userinfo.email','https://www.googleapis.com/auth/youtube','https://www.googleapis.com/auth/yt-analytics.readonly'];
 function mountConnections({router,db,list,save,wrap,dep}){
  const google=dep('googleapis').google,secret=process.env.JWT_SECRET;
  const origin=new URL(process.env.FRONTEND_URL).origin;
  const callback=p=>origin+'/integrations/social/'+(p==='meta'?'facebook':'youtube');
+ const metaScopes=process.env.META_INCLUDE_BUSINESS_PORTFOLIOS==='false'?META_SCOPES:[...META_SCOPES,'business_management'];
  const encrypt=(value,org)=>seal(value,secret,org),decrypt=(value,org)=>unseal(value,secret,org);
  const googleClient=()=>new google.auth.OAuth2(process.env.YOUTUBE_CLIENT_ID,process.env.YOUTUBE_CLIENT_SECRET,callback('google'));
  const configured=p=>p==='meta'?!!(process.env.FACEBOOK_APP_ID&&process.env.FACEBOOK_APP_SECRET):!!(process.env.YOUTUBE_CLIENT_ID&&process.env.YOUTUBE_CLIENT_SECRET);
@@ -30,7 +31,7 @@ function mountConnections({router,db,list,save,wrap,dep}){
   await db.$executeRawUnsafe("DELETE FROM brand_hub.documents WHERE org_id=$1 AND kind IN ('oauth-state','discovery') AND updated_at < now()-interval '1 day'",req.org.id);
   await db.$executeRawUnsafe('INSERT INTO brand_hub.documents(org_id,id,kind,data) VALUES($1,$2,$3,$4::jsonb)',req.org.id,state,'oauth-state',JSON.stringify({userId:req.user.id,provider:p,verifier,expiresAt:Date.now()+600000}));
   let url;if(p==='google')url=googleClient().generateAuthUrl({scope:GOOGLE_SCOPES,access_type:'offline',prompt:'consent select_account',state,code_challenge:crypto.createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'});
-  else {const u=new URL('https://www.facebook.com/v25.0/dialog/oauth');for(const[k,v]of Object.entries({client_id:process.env.FACEBOOK_APP_ID,redirect_uri:callback(p),state,scope:META_SCOPES.join(','),response_type:'code'}))u.searchParams.set(k,v);url=u.href;}
+  else {const u=new URL('https://www.facebook.com/v25.0/dialog/oauth');for(const[k,v]of Object.entries({client_id:process.env.FACEBOOK_APP_ID,redirect_uri:callback(p),state,scope:metaScopes.join(','),response_type:'code'}))u.searchParams.set(k,v);url=u.href;}
   res.json({url});
  }));
  router.get('/api/oauth/:provider/callback',wrap(async(req,res)=>{

@@ -1,0 +1,98 @@
+name: brand-hub-local
+
+services:
+  app:
+    image: ${BRAND_HUB_LOCAL_APP_IMAGE:-brand-hub-local-source-app:local}
+    build:
+      context: .
+      args:
+        POSTIZ_BASE_IMAGE: ${BRAND_HUB_SOURCE_BASE_IMAGE:-brand-hub-postiz-source:local}
+        POSTIZ_COOKIE_FIX_IN_SOURCE: '1'
+    ports:
+      - '127.0.0.1:4007:5000'
+    command:
+      - sh
+      - -c
+      - |
+        unset PORT
+        pnpm exec prisma db push --skip-generate --schema libraries/nestjs-libraries/src/database/prisma/schema.prisma &&
+        nginx &&
+        exec pm2-runtime start /opt/postiz-railway/ecosystem.config.cjs
+    environment:
+      MAIN_URL: http://localhost:4007
+      FRONTEND_URL: http://localhost:4007
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:4007/api
+      BACKEND_INTERNAL_URL: http://localhost:3000
+      DATABASE_URL: postgresql://postiz:postiz-local@postgres:5432/postiz
+      REDIS_URL: redis://redis:6379
+      TEMPORAL_ADDRESS: temporal:7233
+      JWT_SECRET: ${BRAND_HUB_LOCAL_JWT_SECRET:-brand-hub-local-development-only}
+      IS_GENERAL: 'true'
+      DISABLE_REGISTRATION: 'false'
+      STORAGE_PROVIDER: local
+      UPLOAD_DIRECTORY: /uploads
+      NEXT_PUBLIC_UPLOAD_DIRECTORY: /uploads
+      YOUTUBE_CLIENT_ID: ${BRAND_HUB_LOCAL_YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${BRAND_HUB_LOCAL_YOUTUBE_CLIENT_SECRET:-}
+      FACEBOOK_APP_ID: ${BRAND_HUB_LOCAL_FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${BRAND_HUB_LOCAL_FACEBOOK_APP_SECRET:-}
+      META_INCLUDE_BUSINESS_PORTFOLIOS: 'false'
+    volumes:
+      - uploads:/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: postiz
+      POSTGRES_USER: postiz
+      POSTGRES_PASSWORD: postiz-local
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-h', '127.0.0.1', '-U', 'postiz', '-d', 'postiz']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7.2-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  temporal:
+    image: temporalio/auto-setup:1.28.1
+    environment:
+      DB: postgres12
+      DB_PORT: '5432'
+      POSTGRES_SEEDS: postgres
+      POSTGRES_USER: postiz
+      POSTGRES_PWD: postiz-local
+      # Postiz needs two Text attributes. The sample attributes would fill the SQL quota.
+      SKIP_ADD_CUSTOM_SEARCH_ATTRIBUTES: 'true'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'temporal', 'operator', 'cluster', 'health', '--address', 'temporal:7233']
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 18
+
+volumes:
+  postgres:
+  redis:
+  uploads:

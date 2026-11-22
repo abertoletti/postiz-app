@@ -1,5 +1,42 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {propose,seal,unseal,publicResource,discoverMeta}=require('./discovery.cjs');
+
+test('Meta discovery restores only explicitly granted resources when the Pages list is empty',async t=>{
+  for(const [key,value] of Object.entries({FACEBOOK_APP_ID:'100',FACEBOOK_APP_SECRET:'app-secret'})){
+    const previous=process.env[key];
+    process.env[key]=value;
+    t.after(()=>{
+      if(previous===undefined)delete process.env[key];
+      else process.env[key]=previous;
+    });
+  }
+  const permissions=['pages_show_list','instagram_basic','instagram_content_publish'];
+  const responses={
+    'me':{id:'200',name:'Owner'},
+    'me/permissions':{data:permissions.map(permission=>({permission,status:'granted'}))},
+    'me/accounts':{data:[]},
+    'debug_token':{data:{app_id:'100',is_valid:true,granular_scopes:[
+      {scope:'pages_show_list',target_ids:['300','400']},
+      {scope:'instagram_basic',target_ids:['301']},
+    ]}},
+    '300':{id:'300',name:'Selected Page',instagram_business_account:{id:'301',username:'selected'}},
+    '400':{id:'400',name:'Other Page',instagram_business_account:{id:'401',username:'unselected'}},
+  };
+  const requests=[];
+  t.mock.method(globalThis,'fetch',async (url,options)=>{
+    const route=url.pathname.replace('/v25.0/','');
+    requests.push(route);
+    assert.ok(Object.hasOwn(responses,route));
+    if(route==='debug_token')assert.equal(options.headers.Authorization,'Bearer 100|app-secret');
+    if(route==='300'||route==='400')assert.ok(!url.searchParams.get('fields').includes('tasks'));
+    return {ok:true,json:async()=>responses[route]};
+  });
+  const discovery=await discoverMeta({token:'user-token'});
+  assert.deepEqual(requests,['me','me/permissions','me/accounts','debug_token','300','400']);
+  assert.deepEqual(discovery.resources.map(resource=>resource.externalId),['300','301','400']);
+  assert.equal(discovery.resources.find(resource=>resource.platform==='instagram').canConnect,true);
+  assert.deepEqual(discovery.warnings,[]);
+});
 test('explicit Meta link groups different names and preserves existing brand',()=>{const b={id:'brand',data:{name:'Sample',channelIds:['ig']}};const groups=propose([{platform:'facebook',externalId:'page',pageId:'page',name:'Sample Italia'},{platform:'instagram',externalId:'ig',pageId:'page',name:'Sample',integrationId:'ig'}],[b]);assert.equal(groups.length,1);assert.equal(groups[0].brandId,'brand');assert.equal(groups[0].resources.length,2);});
 test('ambiguous names do not silently choose an existing brand',()=>{const groups=propose([{platform:'youtube',externalId:'1',name:'Example'}],['a','b'].map(id=>({id,data:{name:'Example',channelIds:[]}})));assert.equal(groups[0].brandId,'');assert.match(groups[0].reason,/Più brand/);});
 test('one resource per existing brand even when names match',()=>{const brands=['a','b'].map(id=>({id,data:{name:'Example',channelIds:[id]}}));const groups=propose(brands.map(b=>({platform:'youtube',externalId:b.id,name:'Example',integrationId:b.id})),brands);assert.equal(groups.length,2);});

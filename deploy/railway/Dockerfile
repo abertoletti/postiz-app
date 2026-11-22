@@ -1,4 +1,6 @@
-FROM ghcr.io/gitroomhq/postiz-app@sha256:875e61ac5d0ac43c3dec78a78a7032dfb03d9a8c6d4936ebb18adb606cc207c5
+ARG POSTIZ_BASE_IMAGE=ghcr.io/gitroomhq/postiz-app@sha256:875e61ac5d0ac43c3dec78a78a7032dfb03d9a8c6d4936ebb18adb606cc207c5
+FROM ${POSTIZ_BASE_IMAGE}
+ARG POSTIZ_COOKIE_FIX_IN_SOURCE=0
 
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
@@ -10,7 +12,7 @@ COPY ecosystem.config.cjs reduce-process-overhead.cjs /opt/postiz-railway/
 COPY hub /opt/postiz-railway/hub
 COPY install-hub.cjs /opt/postiz-railway/
 COPY unify-postiz-ui.cjs brand-hub-native-ui.cjs brand-hub-native-ui.test.cjs /opt/postiz-railway/
-RUN node /opt/postiz-railway/patch-cookie-domains.cjs \
+RUN if [ "$POSTIZ_COOKIE_FIX_IN_SOURCE" = 0 ]; then node /opt/postiz-railway/patch-cookie-domains.cjs; fi \
  && node /opt/postiz-railway/cookie-domains.test.cjs \
  && node /opt/postiz-railway/brand-hub-backend-copy.cjs \
  && node /opt/postiz-railway/patch-meta-analytics.cjs \
