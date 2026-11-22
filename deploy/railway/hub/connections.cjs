@@ -56,7 +56,7 @@ function mountConnections({router,db,list,save,wrap,dep}){
  router.post('/api/connections/discover',wrap(async(req,res)=>{
   const org=req.org.id,{all,existing}=await sources(org),brands=await list(org,'brand'),resources=new Map(),reports=[];
   // Existing integrations remain visible even if a provider is temporarily unavailable.
-  for(const c of existing.filter(c=>!c.inBetweenSteps))resources.set(c.providerIdentifier+':'+c.internalId,{platform:c.providerIdentifier,externalId:c.internalId,name:c.customName||c.name,handle:c.profile||'',integrationId:c.id,canConnect:!c.disabled&&!c.refreshNeeded,container:'Già collegato a Postiz',connectionId:c.id});
+  for(const c of existing.filter(c=>!c.inBetweenSteps))resources.set(c.providerIdentifier+':'+c.internalId,{platform:c.providerIdentifier,externalId:c.internalId,name:c.customName||c.name,handle:c.profile||'',integrationId:c.id,canConnect:!c.disabled&&!c.refreshNeeded,container:'Già collegato a Brand Hub',connectionId:c.id});
   for(const source of all){try{
     const result=source.provider==='meta'?await discoverMeta(source):await discoverGoogle(source,google);
     for(const r of result.resources){const key=resourceKey(r),old=resources.get(key),integration=existing.find(c=>!c.inBetweenSteps&&c.providerIdentifier===r.platform&&c.internalId===r.externalId);if(!old||r.canConnect||!old.token)resources.set(key,{...r,connectionId:source.id,integrationId:integration?.id});}
