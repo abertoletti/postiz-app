@@ -1,0 +1,5 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {groupSources,inventoryId}=require('./credentials.cjs');
+test('one Meta identity is one credential despite multiple tokens and integrations',()=>{const result=groupSources([{id:'new',provider:'meta',name:'Owner',rootId:'u',token:'a'},{id:'legacy',provider:'meta',name:'Page',rootId:'u',token:'b',existing:true}]);assert.equal(result.length,1);assert.equal(result[0].id,'new');assert.equal(result[0].name,'Owner');assert.equal(result[0].sources.length,2);});
+test('keep Google channel grants under one identity without losing any grant',()=>{const result=groupSources(['a','b'].map(id=>({id,provider:'google',rootId:'owner',name:'owner@example.com',token:id})));assert.equal(result.length,1);assert.equal(result[0].sources.length,2);});
+test('never merge distinct identities or platforms by display name',()=>{const result=groupSources([{id:'1',rootId:'a',provider:'google',name:'Same'},{id:'2',rootId:'b',provider:'google',name:'Same'},{id:'3',rootId:'a',provider:'meta',name:'Same'}]);assert.equal(result.length,3);assert.notEqual(inventoryId(result[0].key),inventoryId(result[1].key));});
