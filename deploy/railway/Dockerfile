@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-co
 
 COPY patch-cookie-domains.cjs cookie-domains.test.cjs disable-internal-ai.cjs internal-ai.test.cjs /opt/postiz-railway/
 COPY brand-hub-backend-copy.cjs /opt/postiz-railway/
+COPY patch-meta-analytics.cjs meta-analytics.test.cjs /opt/postiz-railway/
 COPY ecosystem.config.cjs reduce-process-overhead.cjs /opt/postiz-railway/
 COPY hub /opt/postiz-railway/hub
 COPY install-hub.cjs /opt/postiz-railway/
@@ -12,6 +13,8 @@ COPY unify-postiz-ui.cjs brand-hub-native-ui.cjs brand-hub-native-ui.test.cjs /o
 RUN node /opt/postiz-railway/patch-cookie-domains.cjs \
  && node /opt/postiz-railway/cookie-domains.test.cjs \
  && node /opt/postiz-railway/brand-hub-backend-copy.cjs \
+ && node /opt/postiz-railway/patch-meta-analytics.cjs \
+ && node --test /opt/postiz-railway/meta-analytics.test.cjs \
  && node /opt/postiz-railway/disable-internal-ai.cjs \
  && node /opt/postiz-railway/internal-ai.test.cjs \
  && node --test /opt/postiz-railway/brand-hub-native-ui.test.cjs \
